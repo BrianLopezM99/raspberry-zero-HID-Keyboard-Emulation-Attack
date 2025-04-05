@@ -1,6 +1,4 @@
-¡Excelente idea! Vamos a reconstruir desde cero **la configuración definitiva** para el HID Keyboard en Raspberry Pi Zero 2 W, integrando todo lo aprendido. Sigue este proceso paso a paso:
-
-### 🔧 **Configuración Limpia desde Cero**
+ ### 🔧 **Configuración Limpia desde Cero**
 
 #### 1. **Preparación del Sistema**
 ```bash
