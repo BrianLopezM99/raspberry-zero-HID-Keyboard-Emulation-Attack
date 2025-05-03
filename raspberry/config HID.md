@@ -162,3 +162,115 @@ Y a partir de aqui ya podemos correr nuestros scripts automatizados haciéndonos
 ```shell
 sudo /usr/local/bin/send_win_r.sh
 ```
+
+
+
+En caso de que no funcione la segunda vez que conectas el dispositivo, realiza lo siguiente
+
+Este error indica que tu script `hid_init` está fallando al intentar configurar el dispositivo USB como un _USB HID gadget_ en tu Raspberry Pi. Vamos paso por paso explicando cada problema y cómo solucionarlo.
+
+---
+
+### 📌 **Errores Clave**
+
+1. **`/sys/bus/usb/devices/usb1/authorized: No such file or directory`**
+    
+    Esto sugiere que el controlador USB `usb1` no existe o no está activo en ese momento. En Raspberry Pi (usando el puerto OTG, normalmente en la Raspberry Pi Zero, Zero 2 W o 4B), el controlador OTG no se llama `usb1`, y ese path podría ser incorrecto.
+    
+    ✅ **Solución:** No todos los sistemas tienen `usb1`. Puedes quitar o comentar estas dos líneas:
+    
+    ```bash
+    # echo 0 > /sys/bus/usb/devices/usb1/authorized
+    # echo 1 > /sys/bus/usb/devices/usb1/authorized
+    ```
+    
+2. **`modprobe: ERROR: could not insert 'g_hid': No such device`**
+    
+    Esto significa que el kernel no puede cargar el módulo `g_hid` porque **el hardware o el modo OTG no está correctamente configurado**.
+    
+    ✅ **Solución:**
+    
+    - Asegúrate de que el archivo `/boot/config.txt` tiene habilitado el **OTG mode**:
+        
+        ```shell
+        dtoverlay=dwc2
+        ```
+        
+    - Y que en `/boot/cmdline.txt` hayas añadido `modules-load=dwc2` **justo después de `rootwait`**, por ejemplo:
+        
+        ```shell
+        ... rootwait modules-load=dwc2,g_ether ...
+        ```
+        
+    - Reinicia después de hacer estos cambios.
+        
+3. **`echo: write error: Device or resource busy`**
+    
+    Esto pasa cuando ya hay una configuración activa y estás tratando de escribir de nuevo en `report_desc`, `UDC`, etc. Básicamente, estás intentando montar el gadget encima de uno ya activo.
+    
+    ✅ **Solución:** Antes de ejecutar `hid_init`, asegúrate de desmontar gadgets anteriores. Puedes agregar esto al inicio del script:
+    
+    ```bash
+    if [ -d /sys/kernel/config/usb_gadget/g1 ]; then
+        echo "" > /sys/kernel/config/usb_gadget/g1/UDC || true
+        sleep 1
+        rm -rf /sys/kernel/config/usb_gadget/g1
+    fi
+    ```
+    
+4. **`ln: failed to create symbolic link 'configs/c.1/hid.usb0': File exists`**
+    
+    El enlace simbólico ya existe, lo que indica que ejecutaste el script más de una vez sin desmontar el gadget anterior.
+    
+    ✅ **Solución:** Usa el snippet anterior para limpiar la configuración previa antes de crearla de nuevo.
+    
+5. **`ERROR: No UDC found`**
+    
+    Este es el más crítico. Significa que **el kernel no detecta un controlador USB gadget disponible** para usar como HID.
+    
+    ✅ **Solución:**
+    
+    - Ejecuta `ls /sys/class/udc/` y verifica que aparece algo como `20980000.usb`
+        
+        ```bash
+        ls /sys/class/udc/
+        ```
+        
+        Si aparece vacío, entonces el kernel no ha cargado `dwc2` correctamente o la placa no permite OTG (por ejemplo, un Raspberry Pi 4 necesita configuraciones especiales en el puerto USB-C).
+        
+
+---
+
+### ✅ Recomendaciones Completas
+
+1. Asegúrate de que tu Pi soporta **modo OTG** (Raspberry Pi Zero, Zero W, Pi 4 usando el USB-C con `device-tree` correctamente configurado).
+    
+2. En `/boot/config.txt`:
+    
+    ```
+    dtoverlay=dwc2
+    ```
+    
+3. En `/boot/cmdline.txt`, añade:
+    
+    ```
+    modules-load=dwc2,libcomposite
+    ```
+    
+    (asegúrate de no romper la línea: **toda debe estar en una sola línea**).
+    
+4. Reinicia.
+    
+
+---
+
+### 🛠️ Alternativa rápida para probar el UDC
+
+Antes de ejecutar tu script, asegúrate de que el gadget framework está disponible:
+
+```bash
+modprobe libcomposite
+ls /sys/class/udc/
+```
+
+Si esto no muestra nada, el UDC (USB Device Controller) no está funcionando — sin esto, no puedes crear gadgets.
